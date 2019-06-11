@@ -1,4 +1,4 @@
-library(mgcv)
+
 library(ggplot2)
 library(plotly)
 
@@ -23,12 +23,20 @@ df.dict <- subset(df.dict, ROI_COL%in%roi.columns)
 df.dict$ROI_LABEL <- paste0("[", df.dict$ROI_COL, "] ", df.dict$ROI_NAME)
 
 # helper function to query lifespan predictions
-query_age_predictions<- function(ages, roi_col="R4", df=df.lifespan.pred){
+query_age_predictions<- function(ages, roi_col="R4", sex=NA, df=df.lifespan.pred){
   results <- rep(NA, length(ages))
   for (i in 1:length(ages)){
     age <- ages[i]
     row_index <- which.min(abs(df$AGE - age))
-    results[i] <- df[row_index, roi_col]
+    if (is.na(sex[i])){
+      results[i] <- df[row_index, roi_col]
+    } else {
+      if (sex[i]=="M"){
+        results[i] <- df[row_index, paste0(roi_col, "_MALE")]
+      } else {
+        results[i] <- df[row_index, paste0(roi_col, "_FEMALE")]
+      }
+    }
   }
   return(results)
 }
@@ -61,17 +69,23 @@ function(input, output, session) {
       }
       # correct for SEX, ICV effects, then rescenter to mean volume
       if (input$CORRECT.NEWDATA){
-        covar.coef <- df.linear.coef[, selectedROI()]
-        new.mod <- model.matrix(~ SEX + ICV, data=new.data)
-        original.volumes <- new.data[, selectedROI()]
-        mean.original.volumes <- mean(new.data[, selectedROI()])
-        predicted.volumes <- new.mod%*%covar.coef
-        corrected.volumes <- original.volumes - predicted.volumes
-        new.data[, selectedROI()] <- corrected.volumes + mean.original.volumes
+        if (!input$SEPARATE.SEXES){
+          covar.coef <- df.linear.coef[, selectedROI()]
+          new.mod <- model.matrix(~ SEX + ICV, data=new.data)
+          original.volumes <- new.data[, selectedROI()]
+          mean.original.volumes <- mean(new.data[, selectedROI()])
+          predicted.volumes <- new.mod%*%covar.coef
+          corrected.volumes <- original.volumes - predicted.volumes
+          new.data[, selectedROI()] <- corrected.volumes + mean.original.volumes
+        }
       }
       # harmonize new data to lifespan trajectory
       if (input$HARMONIZE.NEWDATA){
-        new.data$PRED_VOLUME <- query_age_predictions(new.data$AGE, roi_col=selectedROI())
+        if (!input$SEPARATE.SEXES){
+          new.data$PRED_VOLUME <- query_age_predictions(new.data$AGE, roi_col=selectedROI())
+        } else {
+          new.data$PRED_VOLUME <- query_age_predictions(new.data$AGE, roi_col=selectedROI(), sex=new.data$SEX)
+        }
         new.data$RESID_VOLUME <- new.data[, selectedROI()] - c(new.data$PRED_VOLUME)
         location.effect <- mean(new.data$RESID_VOLUME)
         if (input$HARMONIZE.NEWDATA.SCALE){
@@ -94,20 +108,33 @@ function(input, output, session) {
     default.y.axis.lims <- c(default.y.axis.min, default.y.axis.max)
     custom.y.axis.constant <- 1.0 * (default.y.axis.lims[2] - default.y.axis.lims[1]) / 2
     custom.y.axis.lims <- c(default.y.axis.lims[1] - custom.y.axis.constant, default.y.axis.lims[2] + custom.y.axis.constant)
-    gg <- ggplot(df.lifespan.pred, aes_string(x="AGE", y=selectedROI())) +
+    gg <- ggplot(df.lifespan.pred, aes(x=AGE)) +
       labs(x="Age", y="ROI Volume") +
-      theme(legend.position="none") +
       ylim(custom.y.axis.lims)
     if (!is.null(input$NEWDATA)){
+      if (input$SEPARATE.SEXES){
+        gg <- gg +
+          geom_point(data=subset(newData(), SEX=="M"), aes_string(y=selectedROI(), label="ID"), color="blue", alpha=0.5, size=3) +
+          geom_point(data=subset(newData(), SEX=="F"), aes_string(y=selectedROI(), label="ID"), color="green", alpha=0.5, size=3)
+      } else {
+        gg <- gg +
+          geom_point(data=newData(), aes_string(y=selectedROI(), label="ID"), color="red", alpha=0.5, size=3)
+      }
+    }
+    if (input$SEPARATE.SEXES){
       gg <- gg +
-        geom_point(data=newData(), aes(label=ID), color="red", alpha=0.5, size=3)
+        geom_line(aes_string(y=paste0(selectedROI(), "_MALE"), color=shQuote("Male"))) +
+        geom_line(aes_string(y=paste0(selectedROI(), "_FEMALE"), color=shQuote("Female"))) +
+        scale_color_manual(name="Sex", values=c(Male="blue", Female="green"))
+    } else {
+      gg <- gg +
+        geom_line(aes_string(y=selectedROI()), color="black") +
+        geom_line(aes_string(y=paste0(selectedROI(), "_UPR")), color="black", linetype="dashed") +
+        geom_line(aes_string(y=paste0(selectedROI(), "_LWR")), color="black", linetype="dashed") +
+        geom_point(data=predictedDecades(), aes(x=AGE, y=PRED), color="black")
     }
     
-    gg +
-      geom_line(color="black") +
-      geom_line(aes_string(x="AGE", y=paste0(selectedROI(), "_UPR")), color="black", linetype="dashed") +
-      geom_line(aes_string(x="AGE", y=paste0(selectedROI(), "_LWR")), color="black", linetype="dashed") +
-      geom_point(data=predictedDecades(), aes(x=AGE, y=PRED), color="black")
+    ggplotly(gg) %>% layout(legend=list(x=0.05, y=0.95))
   })
   
   # DISPLAY TABLE OF PREDICTED CHANGES BY DECADE
