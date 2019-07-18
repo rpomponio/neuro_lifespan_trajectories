@@ -12,7 +12,7 @@ df.lifespan.pred <- read.csv("input_datasets/data_lifespan_age_trajectories.csv"
 roi.columns <- colnames(df.lifespan.pred)[grepl("^R\\d+", colnames(df.lifespan.pred))]
 
 # load covariate coefficients
-df.linear.coef <- read.csv("input_datasets/data_roi_covariate_correction_coefficients.csv", stringsAsFactors=F)
+df.coef <- read.csv("input_datasets/data_roi_covariate_correction_coefficients.csv", stringsAsFactors=F)
 
 # load scale estimates
 df.roi.rmse <- read.csv("input_datasets/data_roi_rmse_estimates.csv", stringsAsFactors=F)
@@ -67,16 +67,18 @@ function(input, output, session) {
       if (!"ID"%in%colnames(new.data)){
         new.data$ID <- 1:nrow(new.data)
       }
-      # correct for SEX, ICV effects, then rescenter to mean volume
+      # center ICV at zero (for correction)
+      new.data$ICV <- scale(new.data$ICV)[, 1]
+      # correct for SEX, ICV effects
+      coef.names <- c("SEXM", "ICV")
       if (input$CORRECT.NEWDATA){
         if (!input$SEPARATE.SEXES){
-          covar.coef <- df.linear.coef[, selectedROI()]
-          new.mod <- model.matrix(~ SEX + ICV, data=new.data)
+          covar.coef <- df.coef[, selectedROI()]
+          X.correction <- model.matrix(~ SEX + ICV, data=new.data)[, coef.names]
+          correction.estimate <- X.correction %*% covar.coef
           original.volumes <- new.data[, selectedROI()]
-          mean.original.volumes <- mean(new.data[, selectedROI()])
-          predicted.volumes <- new.mod%*%covar.coef
-          corrected.volumes <- original.volumes - predicted.volumes
-          new.data[, selectedROI()] <- corrected.volumes + mean.original.volumes
+          corrected.volumes <- original.volumes - correction.estimate
+          new.data[, selectedROI()] <- corrected.volumes
         }
       }
       # harmonize new data to lifespan trajectory
@@ -109,7 +111,7 @@ function(input, output, session) {
     custom.y.axis.constant <- 1.0 * (default.y.axis.lims[2] - default.y.axis.lims[1]) / 2
     custom.y.axis.lims <- c(default.y.axis.lims[1] - custom.y.axis.constant, default.y.axis.lims[2] + custom.y.axis.constant)
     gg <- ggplot(df.lifespan.pred, aes(x=AGE)) +
-      labs(x="Age", y="ROI Volume") +
+      labs(x="Age", y="ROI Volume (cubic mm)") +
       ylim(custom.y.axis.lims)
     if (!is.null(input$NEWDATA)){
       if (input$SEPARATE.SEXES){
