@@ -5,6 +5,6 @@ account: rpomponio
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 1002064
-bundleId: 2245599
+bundleId: 2508900
 url: https://rpomponio.shinyapps.io/neuro_lifespan/
-when: 1563485742.26295
+when: 1571325580.38097

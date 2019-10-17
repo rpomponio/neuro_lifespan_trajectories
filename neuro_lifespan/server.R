@@ -1,4 +1,9 @@
 
+options(stringsAsFactors=F)
+options(scipen=10000)
+
+library(mgcv)
+library(gridExtra)
 library(ggplot2)
 library(plotly)
 
@@ -145,17 +150,10 @@ function(input, output, session) {
     tmp.df.pred.decade$PRED <- round(tmp.df.pred.decade$PRED, 3)
     tmp.df.pred.decade$PRED_LAG <- NULL
     tmp.df.pred.decade$PRED_DELTA <- round(100*tmp.df.pred.decade$PRED_DELTA, 3)
-    names(tmp.df.pred.decade) <- c("Age", "PredictedVolume", "PercentChange")
+    names(tmp.df.pred.decade) <- c("Age", "AverageVolume", "PercentChange")
     
     tmp.df.pred.decade
   })
-  
-  
-  
-  
-  
-  
-  
-  
+
   
 }
